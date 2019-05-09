@@ -1,26 +1,185 @@
 ---
-title: "EDA buscas"
+title: "Fundamentos de Pesquisa em Ciência da Computação II"
+author: "L2P2 - Géssica Alves"
 output: html_notebook
 ---
 
-O objeto principal da análise são as buscas e a navegação depois da busca. Criamos esses dados a partir dos dados originais da wikimedia em `/data/search_data.csv`. 
+#Explorando os dados das Sessões, Buscas e Navegação da Wikimedia
 
-Aqui, exploramos esses dados. 
+No presente relatório é utilizada a exploração de dados do dataset disponibilizado pela Wikimedia Foundation. Além do dataset, eles apresentaram instruções e quatro perguntas a serem respondidas por meio dos dados disponibilizados.
 
-```{r setup}
+Nas seções seguintes são apresentadas as bibliotecas e dados utilizados nas análises, bem como as respostas e análises para as quatro perguntas elencadas pela Wikimedia. 
+
+# 1. Bibliotecas utilizadas
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(here)
 library(lubridate)
+library(ggplot2)
+library(knitr)
 theme_set(theme_bw())
 ```
 
-```{r ETL}
-buscas = read_csv(here::here("data/search_data.csv"))
+# 2. Carregando os dados para análise 
+
+Para melhor compreensão da análise, foi adicionada uma nova coluna nos dados referente a data realizada da busca, onde foi excluida a informação de horas.  
+
+É necessário realizar a comparação do número de clicks ifelse(num_clicks>0,1,0) e criar uma nova coluna (clicks) para armazenar esses dados de '0' e '1', tendo em vista que será considerado apenas o valor de '1' click, mesmo que o usuário tenha clicado '2' ou mais vezes.
+
+```{r message=FALSE, warning=FALSE}
+buscas = read_csv(here::here("data/search_data.csv")) %>%
+head(100000) %>% 
+mutate(day = round_date(session_start_date, unit = "day")) %>% 
+mutate (clicks = ifelse(num_clicks>0,1,0))
 ```
 
+# 2.1 Variáveis utilizadas nas análises
+
+group : Um marcador (“a” ou “b”);
+
+results : Número de ocorrências retornadas para o usuário;
+
+num_clicks: Número de ocorrências clicadas pelo usuário;
+
+first_click: Posição da ocorrência que o usuário clicou primeiro;
+
+session_start_date: Data do início da busca;
+
+session_length: Duração da sessão.
+
+# 3. Respostas para as questões
+
+# 3.1 Qual é a taxa de cliques geral diária? Como isso varia entre os grupos?
+
+Primeiramente, para relizar a análise do taxa de cliques geral os dados foram agrupados por sessão, por meio da variável session_id. A partir disso, foi criado um sumário para armazenar o valor máximo de cliques (ou seja, com valor 1), com também o dia e grupo por sessão. Logo em seguida, foi feito o agrupamento por dia, para que fosse possível realizar o cálculo da taxa de cliques geral diária. Por fim, a partir das análises efetuadas foi possível gerar o gráfico da Figura 1, em que no geral a taxa encontra-se entre 40%, havendo uma pequena variação de um dia para o outro.
+
 ```{r}
-buscas %>% 
-    ggplot(aes(x = results)) + 
-    geom_histogram(binwidth = 5) 
+clicks_rate = buscas %>%
+    group_by(session_id) %>%
+    summarise(click = max(clicks),
+              day = max(day),
+              group = max(group))
+
+clickthrough_rate = clicks_rate %>%
+    group_by(day) %>%
+    summarise(clickthrough_rate = (sum(click)/length(session_id)))
+
+clickthrough_rate %>%
+    ggplot(aes(x = day ,y = clickthrough_rate)) +
+    geom_bar(stat = "identity", fill = "#008B8B") +
+    labs(x = "day", y = "clickthrough rate", title = "Figura 1 - Taxa de cliques geral diária")
 ```
+
+Enquanto na relação por grupos, um novo sumário foi criado por meio do anterior, onde os dados além de serem agrupados por dia, foram agrupados também por grupo. Dessa forma, foi gerado o gráfico de barras da Figura 2, em que é possível observar que o grupo 'a' apresenta a taxa de clique diária superior que o grupo 'b'.
+
+```{r}
+clicks_rate = buscas %>%
+    group_by(session_id) %>%
+    summarise(click = max(clicks),
+              day = max(day),
+              group = max(group))
+
+clickthrough_rate_group = clicks_rate %>%
+    group_by(day, group) %>%
+    summarise(clickthrough_rate = (sum(click)/length(session_id)))
+
+clickthrough_rate_group %>%
+    ggplot(mapping = aes(x = day, y = clickthrough_rate, fill = group)) +
+    geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+    scale_fill_manual(values = c("#999999", "#FF8C00")) +
+    labs(x = "day", y = "clickthrough rate", title = "Figura 2 - Taxa de cliques geral diária entre os grupos")
+```
+
+# 3.2 Quais resultados as pessoas tendem a tentar primeiro? Como isso muda no dia-a-dia?
+
+Como o objetivo da questão é realizar o levantamento de quais resultados as pessoas tendem a tentar primeiro, a variável first_click é responsável por armazenar o primeiro resultado de busca clicada por sessão. Dessa maneira, foi aplicado dois filtros para que somente sejam retornados os valores diferentes de NA e maiores que zero.
+
+Na Figura 3 é verificado de forma mais clara, através de escala logarítmica, que a maioria tedem a tentar o primeiro resultado. 
+
+```{r}
+results = buscas %>%
+    filter(!is.na(first_click)) %>%
+    filter(first_click != 0)
+
+glimpse(dados)
+
+results %>%
+    ggplot(aes(x=first_click)) + 
+    geom_histogram(binwidth = 1, fill = "#CD5C5C") + 
+    scale_x_log10() +
+    labs(y = "quantity", x = "first click", title = "Figura 3 - Resultados que as pessoas tendem a tentar primeiro")
+```
+
+Considerando a distribuição dos cliques por dia, é verificado no histograma da Figura 4 que na maioria dos dias os usuários continuam tentar o primeiro resultado, como também os 10 primeiros links.
+
+```{r}
+buscas %>%
+    ggplot(aes(x = first_click, fill = day)) +
+    geom_histogram(binwidth = 2, fill = "#CD5C5C") +
+    scale_x_continuous(limits=c(0,30)) +
+    scale_y_continuous(limits=c(0, 1000)) +
+    facet_grid(~day) +
+    labs(x = "first click", y = "quantity", title = "Figura 4 - Distribuição diária") +        
+    theme_grey()
+```
+
+# 3.3 Qual a taxa de resultados zero no geral? Como isso varia entre os grupos?
+
+De acordo com a Wikimedia, a taxa de resultados zero trata-se da proporção de buscas que renderam em 0 resultados. Assim, na Figura 5 foi verificada esta distribuição por dia e observou-se que a taxa encontra-se entre 15% a 21%, com maiores destaques para o primeiro e último dia.
+
+```{r}
+results_rate = buscas %>%
+    group_by(day) %>%
+    summarise(sessions = length(session_id), 
+              results_zero = sum(results == 0), 
+              rate = (results_zero/sessions) * 100)
+
+glimpse (results_rate)
+
+results_rate %>%
+    ggplot(aes(x = day, y = rate)) +
+    geom_bar(stat = "identity", fill = "#008B8B") +
+    labs(x = "day", y = "zero results rate", title = "Figura 5 - Taxa de resultados zero geral por dia")
+```
+
+Já com relação a variação entre os grupos 'a' e 'b', foi gerado um sumário onde os dados foram agrupados por dia, grupo e resultados, realizando o cálculo de proporção entre o somatório da variável criada session_group dividido por length(group). 
+
+Nesta Figura 6, é possível observar que nenhum grupo encontra-se acima ou abaixo do outro. No quinto dia o grupo 'a' apresentou maior taxa quando comparado a 'b', enquanto para o grupo 'b'o sexto dia mostra-se como maior taxa.
+
+```{r}
+
+results_rate = buscas %>%
+    group_by(day, group, results) %>%
+    summarise(session_group = length(group)) %>%
+    mutate(rate_group = sum(session_group)/session_group)
+
+glimpse (results_rate)
+
+results_rate %>%filter(results==0) %>%
+    ggplot(mapping = aes(x = day, y = rate_group, fill = group)) +
+    geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+    scale_fill_manual(values = c("#999999", "#FF8C00")) +
+    labs(x = "day", y = "zero results rate", title = "Figura 6 - Taxa de resultados zero geral por dia entre os grupos")
+```
+
+# 3.4 A duração da sessão é aproximadamente o tempo entre o primeiro e o último evento de uma sessão. Escolha uma variável do conjunto de dados e descreva sua relação com o tamanho da sessão. Visualize o relacionamento.
+
+Na Figura 7, a variável first_click foi relacionada com a duração da sessão (session_length), de modo a investigar se quando o usuário clica nos primeiros resultados ele passa a durar mais tempo ou não na sessão. 
+
+Ao observar o gráfico gerado, é visto que os usuários terminam passando mais tempo nos primeiros resultados. Tendo em vista que há uma maior concentração dos dados no intervalo de 0 à 10 no eixo vertical com relação ao eixo horizontal com maior concentração dos dados no intervalo de 0 à 1000.
+
+
+```{r}
+buscas %>%
+    filter(first_click <= 50)  %>%
+    ggplot(aes(x = session_length, y = first_click)) +
+    geom_point(alpha = .2, size = 2, color = "#A52A2A") +
+    scale_y_continuous(limits=c(0, 50)) +
+    scale_x_continuous(limits=c(0,1000)) +
+    labs(x = "session length (sec)", y = "first click", title = "Figura 7 - Relação da duração da sessão em segundos e cliques") 
+
+```
+
+
 
